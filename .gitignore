@@ -2,3 +2,20 @@ __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
 .env
+
+
+# VS Code settings
+.vscode/
+
+# macOS Finder metadata
+.DS_Store
+
+# Python virtual env folders 
+venv/
+.venv/
+
+# Jupyter Lab workspace files
+.jupyterlab/
+
+# Conda environment directory 
+env/
