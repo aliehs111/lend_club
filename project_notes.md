@@ -183,3 +183,171 @@ At threshold = 0.40, I catch about 60% of defaulters while still approving ~62% 
 - **Notes:**  
   - AUC improved again; specificity slightly better.
 
+**Multicollinearity analysis (2025-06-07)**  
+
+- Added a cell and imported the raw csv again and inspects correlations
+- Since no feature pair exceeded |r| > 0.8 on the raw variables, there is no need to drop any columns for multicollinearity
+- made a new cell to do the datacleaning and save the cleaned csv file as READy_FILE variable so I can get it in my model notebook
+
+- ran model again without SMOTE and just using class weights.  after researching what all this means, I'm understanding the following:
+- - AUC ≈ 0.679 (better than SMOTE’s ~0.668, but still room above 0.70)
+
+- - Sensitivity ≈ 0.596 & Specificity ≈ 0.635 at the 0.5 cutoff (accuracy 0.629)
+
+- - At “working cutoff” 0.40 I get ~86% of defaulters but only approve ~37% of safe loans (accuracy 0.451)
+ 
+  - - next steps to try and tune the hyperparameters sticking with class weights instead of smote just because it was slightly better.
+
+**Hyperparameter tuning (2025-06-07)**  
+
+- raw‐no‐log + class‐weights pipeline gives AUC = 0.6789. To push AUC higher (≥ 0.70) without losing too much specificity, I need to find a better set of hyperparameters.
+  
+- - As I strategize on what hyperparameters to tune to what values...I need to research this better on tensorflow documentation
+ 
+
+**Which hyperparameters to try first:**  
+1. **Layer sizes**  
+   - First layer units: try 128, 64 (current), 32  
+   - Second layer units: try 64, 32 (current), 16  
+2. **Dropout rates**  
+   - Pairs to test: (0.2, 0.2), (0.3, 0.2) (current), (0.4, 0.3)  
+3. **L2 regularization strength**  
+   - Test values: 1e-3, 1e-4 (current), 1e-5  
+4. **Learning rate for Adam optimizer**  
+   - Try: 1e-2, 1e-3 (default), 1e-4  
+
+**Tuning approach:**  
+- **Manual grid search:**  
+  1. Copy `make_model(...)` to `make_model_v2(...)`, parameterized for these values.  
+  2. In separate cells (or a simple loop), instantiate and train each variant with `class_weight` fixed.  
+  3. Record for each trial:  
+     - Test AUC  
+     - Sensitivity & specificity at threshold = 0.40  
+- **Documentation:**  
+  - Add a “Hyperparameter Trials” section below this plan.  
+  - For each trial, note the hyperparameters and the resulting metrics in a small table.  
+
+**Next actions:**  
+1. Modify `make_model` to use 128 units in the first layer (keep everything else constant).  
+2. Run training & evaluation.  
+3. Record the new AUC/sensitivity/specificity results.  
+4. Repeat for the next hyperparameter.  
+5. After a few trials, identify the best combination and lock it in as the final model.  
+
+
+### Hyperparameter Trials Results
+
+| first_layer | second_layer | dropout1 | dropout2 | test_auc | test_sensitivity |
+|-------------|--------------|----------|----------|----------|------------------|
+| 128         | 32           | 0.2      | 0.2      | 0.6838   | 0.5537           |
+| 128         | 32           | 0.3      | 0.2      | 0.6816   | 0.5700           |
+| 128         | 64           | 0.2      | 0.2      | 0.6812   | 0.5635           |
+| 64          | 32           | 0.3      | 0.2      | 0.6802   | 0.5798           |
+| 128         | 64           | 0.3      | 0.2      | 0.6801   | 0.5668           |
+| 64          | 32           | 0.2      | 0.2      | 0.6772   | 0.5668           |
+| 64          | 64           | 0.2      | 0.2      | 0.6768   | 0.5831           |
+| 64          | 64           | 0.3      | 0.2      | 0.6760   | 0.6091           |
+
+**Observations:**  
+- Highest AUC = 0.6838 at 128→32 layers with (0.2, 0.2) dropout, but sensitivity only 55 %.  
+- If we want higher sensitivity (e.g. ≥ 60 %), 64→64 with (0.3, 0.2) gives sens≈ 61 % at AUC ≈ 0.676.  
+- The drop in AUC from 0.684 → 0.676 may be an acceptable trade-off for better recall.
+
+**Next steps:**  
+1. **Decide on the priority:** Is **maximizing AUC** or **raising sensitivity** more critical?  
+2. Based on that, choose one configuration to refine further—e.g.  
+   - If you want **max AUC**, stick with (128→32, 0.2/0.2).  
+   - If you need **higher recall**, try (64→64, 0.3/0.2).  
+3. **Tune additional hyperparameters** around that config:  
+   - Try different **L2 strengths** (1e-3, 1e-5).  
+   - Adjust **learning rate** (1e-2, 1e-4).  
+4. **Re-run** the same training + evaluation loop and record results.
+
+By capturing both the numerical outcomes and your decision logic, you’ll have clear documentation of how each trial influenced the model—and why you chose your final architecture.
+
+
+
+
+### [2025-06-04] Final Model: 64→64, Dropout (0.3,0.2), Class Weights, Early Stopping
+
+**Configuration:**  
+- **Layers:** Dense(64) → Dropout(0.3) → Dense(64) → Dropout(0.2) → Dense(1)  
+- **Regularization:** L2=1e-4 on both Dense layers  
+- **Optimizer & LR:** Adam, lr=1e-3  
+- **Imbalance handling:** `class_weight = {0: w0, 1: w1}`  
+- **Training:** up to 40 epochs, EarlyStopping on `val_sensitivity` (patience=5)
+
+**Training Dynamics (first 10 epochs):**  
+Epoch 1: val_auc=0.6704, val_sensitivity=0.5191
+Epoch 2: val_auc=0.6708, val_sensitivity=0.5660
+Epoch 3: val_auc=0.6761, val_sensitivity=0.6298
+Epoch 4: val_auc=0.6752, val_sensitivity=0.5787
+Epoch 5: val_auc=0.6804, val_sensitivity=0.6468
+Epoch 6: val_auc=0.6782, val_sensitivity=0.5787
+Epoch 7: val_auc=0.6770, val_sensitivity=0.6000
+Epoch 8: val_auc=0.6828, val_sensitivity=0.5787
+Epoch 9: val_auc=0.6764, val_sensitivity=0.6213
+Epoch10: val_auc=0.6783, val_sensitivity=0.5830
+
+
+**Final Test Results (0.5 cutoff):**  
+- **Test loss** = 0.6619  
+- **Test AUC** = 0.6756  
+- **Test Sensitivity** = 0.5993  
+- **Test Accuracy** = 0.6289  (from previous accuracy cell)
+
+**Threshold = 0.40 performance:**  
+- **Sensitivity** = 0.857  
+- **Specificity** = 0.374  
+- **Accuracy** = 0.451
+
+**Interpretation:**  
+- Prioritized recall: final sensitivity ≈ 60% at the 0.5 cutoff, and ≈ 86% at the 0.40 cutoff.  
+- AUC settled at ≈ 0.676, slightly below the 0.68–0.69 range seen in earlier grid trials—early stopping likely prevented overfitting but also capped peak performance.  
+- Overall accuracy at ≈ 63%, reflecting the trade-off toward catching defaulters.
+
+
+### [2025-06-07] Two-Feature Model: FICO + Interest Rate
+
+**Features:**  
+- `fico` (scaled)  
+- `int.rate` (scaled)  
+- Target: `not.fully.paid`
+
+**Model pipeline:**  
+- Class weights  
+- Same 64→64 network with dropout (0.3,0.2), L2=1e-4  
+- 20 epochs, batch=256
+
+**Results:**  
+- Test AUC = _\<fill in\>_  
+- Test Sensitivity = _\<fill in\>_  
+- At cutoff 0.40: sensitivity = _\<fill in\>_, specificity = _\<fill in\>_, accuracy = _\<fill in\>_
+
+**Takeaway:**  
+This shows how much joint signal FICO + interest rate capture. Based on these metrics, decide whether to add a third feature (e.g. `inq.last.6mths`) or pivot to richer engineered features.
+
+
+### [2025-06-07] Three-Feature Model: FICO + Interest Rate + Inquiries
+
+**Features:**  
+- `fico`  
+- `int.rate`  
+- `inq.last.6mths`  
+- Target: `not.fully.paid`
+
+**Pipeline:**  
+- Class weights  
+- Same 64→64 network, Dropout(0.3,0.2), L2=1e-4  
+- 20 epochs, batch=256
+
+**Results:**  
+- Test AUC = 
+- Test Sensitivity = _ 
+- At cutoff 0.40: sensitivity =
+
+**Interpretation:**  
+This reveals how much incremental gain “number of inquiries” provides. If AUC rises substantially (closer to 0.68+), we’ll continue adding the next top feature; if not, we’ll reconsider more advanced feature engineering (ratios, flags, interactions).
+
+
+
