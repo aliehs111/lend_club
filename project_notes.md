@@ -350,4 +350,78 @@ This shows how much joint signal FICO + interest rate capture. Based on these me
 This reveals how much incremental gain “number of inquiries” provides. If AUC rises substantially (closer to 0.68+), we’ll continue adding the next top feature; if not, we’ll reconsider more advanced feature engineering (ratios, flags, interactions).
 
 
+# Lending Club Model v2
+
+#**Purpose:** A fresh modeling pipeline using the full raw feature set  
+#**Date:** 2025-06-08
+
+#### Threshold Sweep for GBT Baseline (Full Raw Features)
+
+| Threshold | Sensitivity | Specificity | Accuracy |
+|-----------|-------------|-------------|----------|
+| 0.00      | 1.000       | 0.000       | 0.160    |
+| 0.05      | 0.984       | 0.101       | 0.242    |
+| 0.10      | 0.912       | 0.262       | 0.366    |
+| 0.15      | 0.612       | 0.616       | 0.615    |
+| 0.20      | 0.407       | 0.803       | 0.740    |
+| 0.25      | 0.274       | 0.899       | 0.799    |
+| 0.30      | 0.173       | 0.940       | 0.817    |
+| 0.35      | 0.121       | 0.968       | 0.832    |
+| 0.40      | 0.065       | 0.981       | 0.835    |
+| 0.45      | 0.055       | 0.988       | 0.838    |
+| 0.50      | 0.029       | 0.994       | 0.840    |
+| 0.55      | 0.016       | 0.996       | 0.839    |
+| 0.60      | 0.007       | 0.998       | 0.839    |
+| 0.65      | 0.003       | 0.998       | 0.839    |
+| 0.70      | 0.003       | 0.999       | 0.839    |
+| 0.75      | 0.003       | 0.999       | 0.840    |
+| 0.80      | 0.000       | 1.000       | 0.840    |
+| 0.85      | 0.000       | 1.000       | 0.840    |
+| 0.90      | 0.000       | 1.000       | 0.840    |
+| 0.95      | 0.000       | 1.000       | 0.840    |
+| 1.00      | 0.000       | 1.000       | 0.840    |
+
+**Key observations:**  
+- At **threshold = 0.15**, sensitivity ≈ 61% and specificity ≈ 62% (balanced trade-off, accuracy ≈ 0.615).  
+- At **threshold = 0.20**, sensitivity ≈ 41%, specificity ≈ 80% (higher precision, accuracy ≈ 0.740).  
+- Higher thresholds drive specificity (and overall accuracy) up but severely reduce sensitivity.
+
+**Chosen cutoff:**  
+To avoid missing too many defaulters while maintaining reasonable approval rates, **threshold = 0.15** (sensitivity ≈ 61%, specificity ≈ 62%) represents the best balance for this GBT baseline.  
+
+I realize today that I don't have information from the business plan so how do I choose specificity for them?  how do I know the best fraction of loans that could be paid back are chosen by my model?  I don't know their risk tolerance.  They business would go under with too many defaults but the business would go under with not enough business if they reject too many loans.   But I don't know how much they can afford to lose or how much business they need to cover their costs without their operating budget.  
+
+researched this problem and came up with Youden's J as the solution to let the model pick the optimum thresholds
+
+## Summary of Recent Steps
+
+- **Created FICO-Only Notebook**  
+  - Single-feature logistic regression on `fico`  
+  - Train/test split, fit with class weights  
+  - AUC ≈ 0.63, optimal threshold ≈0.55 (Sens≈50%, Spec≈69%)
+
+- **Built Neural Net in `lend_club_model_v2.ipynb`**  
+  - `make_model(...)` with two dense layers (64→32), dropout, L2  
+  - Added Recall (sensitivity), AUC, accuracy metrics  
+
+- **Extended Training with Callbacks**  
+  - `EarlyStopping(patience=50, restore_best_weights=True)`  
+  - `ReduceLROnPlateau(factor=0.5, patience=10, min_lr=1e-6)`  
+  - Allowed up to 1000 epochs; actual stop around epoch 54
+
+- **Threshold Optimization for Neural Net**  
+  - Computed Youden’s J on validation ROC  
+  - Found optimal cutoff ≈0.53 → Sens≈53%, Spec≈71%
+
+- **Key Takeaways**  
+  - FICO-only model is interpretable but low AUC (0.63)  
+  - Net converges to AUC ≈0.65, balanced at (0.53, 0.71)  
+  - GBT baseline (AUC≈0.69, Sens≈61% @ Spec≈62%) still outperforms  
+
+## Time to give up until I understand this better because all the results I am getting are a joke and I'm just spinning my wheels and wasting time.
+
+
+
+
+
 
